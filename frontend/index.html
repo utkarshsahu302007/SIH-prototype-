@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<!-- NOTE: This frontend requires the FastAPI backend to be running to fetch data. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FIRMS Hotspot Classifier — Satellite Thermal AI</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <style>
+    :root {
+      --bg-dark: #09090b;
+      --bg-panel: #18181b;
+      --bg-card: #27272a;
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+      --border-color: #3f3f46;
+      --primary: #0ea5e9;
+      
+      /* Class colors */
+      --color-event: #ef4444;
+      --color-persistent: #f97316;
+      --color-agri: #eab308;
+      --color-forest: #a855f7;
+      --color-mining: #3b82f6;
+      --color-fp: #71717a;
+      --color-unclassified: #06b6d4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-panel); }
+    ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+
+    /* Sidebar Layout */
+    #sidebar {
+      width: 360px;
+      background: var(--bg-panel);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border-color);
+      z-index: 1000;
+      box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .header {
+      padding: 16px 20px;
+      background: #0f172a;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .header h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .header p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .api-url-bar {
+      margin-top: 10px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .api-url-bar input {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.72rem;
+    }
+
+    .scroll-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .filter-card {
+      background: var(--bg-card);
+      border-radius: 6px;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    /* Date controls */
+    .date-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .date-field label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .date-field input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+
+    /* Class Checkboxes */
+    .class-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .class-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 3px 0;
+    }
+
+    .class-item input {
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .badge-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .class-name {
+      flex: 1;
+    }
+
+    .class-count {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      background: #1e293b;
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+
+    /* Buttons */
+    .btn {
+      background: #0284c7;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      width: 100%;
+    }
+
+    .btn:hover {
+      background: #0369a1;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      padding: 4px 8px;
+      width: auto;
+    }
+
+    .btn-secondary:hover {
+      background: #334155;
+      color: var(--text-main);
+    }
+
+    .actions-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    /* Events Feed Panel */
+    .events-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      overflow: hidden;
+      max-height: 280px;
+    }
+
+    .events-panel-header {
+      padding: 10px 12px;
+      background: #1e293b;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .events-list {
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .event-card {
+      background: #1e293b;
+      border-left: 3px solid var(--color-event);
+      padding: 8px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: background 0.15s ease;
+    }
+
+    .event-card:hover {
+      background: #0f172a;
+    }
+
+    .event-card-top {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 600;
+      color: #fca5a5;
+    }
+
+    .event-card-desc {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      margin-top: 4px;
+    }
+
+    .no-events {
+      padding: 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    /* Map container */
+    #map {
+      flex: 1;
+      height: 100%;
+      background: #0b1120;
+    }
+
+    /* Loading overlay */
+    #loading-indicator {
+      display: none;
+      position: absolute;
+      top: 16px;
+      left: 400px;
+      z-index: 1000;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid var(--border-color);
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      color: var(--primary);
+      backdrop-filter: blur(4px);
+    }
+
+    /* Custom Leaflet popup styling */
+    .leaflet-popup-content-wrapper {
+      background: #1e293b !important;
+      color: #f8fafc !important;
+      border-radius: 8px !important;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+      border: 1px solid #475569 !important;
+    }
+
+    .leaflet-popup-tip {
+      background: #1e293b !important;
+    }
+
+    .popup-container {
+      font-size: 0.78rem;
+      line-height: 1.4;
+      min-width: 220px;
+    }
+
+    .popup-header {
+      font-weight: 700;
+      font-size: 0.85rem;
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid #475569;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .popup-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: white;
+    }
+
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+
+    .popup-label {
+      color: #94a3b8;
+    }
+
+    .popup-val {
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading indicator -->
+  <div id="loading-indicator">⚡ Fetching hotspots...</div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="header">
+      <h1>🔥 FIRMS Hotspot AI</h1>
+      <p>Thermal anomaly detection & classification</p>
+    </div>
+
+    <div class="scroll-content">
+      
+      <!-- Date Filters -->
+      <div class="filter-card">
+        <div class="section-title">
+          <span>Date Range</span>
+          <button class="btn-secondary" id="reset-dates-btn">Reset</button>
+        </div>
+        <div class="date-inputs">
+          <div class="date-field">
+            <label for="start-date">From</label>
+            <input type="date" id="start-date" />
+          </div>
+          <div class="date-field">
+            <label for="end-date">To</label>
+            <input type="date" id="end-date" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Class Filters -->
+      <div class="filter-card">
+        <div class="section-title">
+          <span>Classification Categories</span>
+          <div class="actions-row" style="margin: 0;">
+            <button class="btn-secondary" id="select-all-btn">All</button>
+            <button class="btn-secondary" id="deselect-all-btn">None</button>
+          </div>
+        </div>
+
+        <div class="class-list" id="class-checkboxes">
+          <!-- Checkboxes injected by JS -->
+        </div>
+      </div>
+
+      <!-- Facility Layer Toggle -->
+      <div class="filter-card" style="padding: 8px 12px; cursor: pointer;" onclick="document.getElementById('toggle-facilities').click()">
+        <label class="class-item" style="margin: 0; pointer-events: none;">
+          <input type="checkbox" id="toggle-facilities" style="pointer-events: auto;" />
+          <span class="badge-dot" style="background: #a1a1aa; border-radius: 2px;"></span>
+          <span class="class-name" style="font-weight: 500;">Show OSM Facilities Overlay</span>
+        </label>
+      </div>
+
+      <!-- Events Feed -->
+      <div class="events-panel">
+        <div class="events-panel-header">
+          <span>🚨 Industrial Events Feed</span>
+          <span id="events-count" class="class-count">0</span>
+        </div>
+        <div class="events-list" id="events-feed">
+          <div class="no-events">No industrial events detected</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Map Container -->
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    // ── Classification Metadata & Colors ─────────────────────────────────────
+    const CLASS_CONFIG = {
+      industrial_event: {
+        label: "Industrial Event",
+        color: "#ef4444",
+        radius: 8,
+      },
+      industrial_persistent: {
+        label: "Industrial Persistent",
+        color: "#f97316",
+        radius: 6,
+      },
+      agricultural_burning: {
+        label: "Agricultural Burning",
+        color: "#eab308",
+        radius: 5,
+      },
+      forest_fire: {
+        label: "Forest Fire",
+        color: "#a855f7",
+        radius: 6,
+      },
+      mining: {
+        label: "Mining",
+        color: "#3b82f6",
+        radius: 6,
+      },
+      other_false_positive: {
+        label: "Other / False Positive",
+        color: "#64748b",
+        radius: 4,
+      },
+    };
+
+    // ── Application State ───────────────────────────────────────────────────
+    let apiBase = ""; // Empty string uses relative paths (served by FastAPI)
+
+    let map;
+    let hotspotLayerGroup;
+    let facilityLayerGroup;
+    let allHotspotFeatures = [];
+    const activeMarkersById = {};
+
+    // ── Initialize Map ───────────────────────────────────────────────────────
+    function initMap() {
+      // Center on India [lat 22.5, lon 80.0], zoom 5
+      map = L.map("map", {
+        center: [22.5, 80.0],
+        zoom: 5,
+        zoomControl: true,
+      });
+
+      // Standard OpenStreetMap tiles (guaranteed free, no API key required)
+      L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+          maxZoom: 19,
+        }
+      ).addTo(map);
+
+      hotspotLayerGroup = L.layerGroup().addTo(map);
+      facilityLayerGroup = L.layerGroup().addTo(map);
+
+      // Re-fetch on map pan/zoom if bbox filtering is enabled
+      map.on("moveend", () => {
+        // Optional: can trigger fetch on move if desired
+      });
+    }
+
+    // ── Render Filter Checkboxes ─────────────────────────────────────────────
+    function renderClassCheckboxes() {
+      const container = document.getElementById("class-checkboxes");
+      container.innerHTML = "";
+
+      Object.entries(CLASS_CONFIG).forEach(([key, cfg]) => {
+        const item = document.createElement("label");
+        item.className = "class-item";
+        item.innerHTML = `
+          <input type="checkbox" value="${key}" checked class="class-filter-cb" />
+          <span class="badge-dot" style="background: ${cfg.color};"></span>
+          <span class="class-name">${cfg.label}</span>
+          <span class="class-count" id="count-${key}">0</span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    // ── Build Popup HTML ─────────────────────────────────────────────────────
+    function createPopupContent(props) {
+      const pClass = props.predicted_class || "unclassified";
+      const cfg = CLASS_CONFIG[pClass] || { label: pClass, color: "#06b6d4" };
+      const confStr = props.prediction_confidence 
+        ? `${(props.prediction_confidence * 100).toFixed(1)}%` 
+        : "N/A";
+      const frpVal = props.frp !== null && props.frp !== undefined 
+        ? `${Number(props.frp).toFixed(1)} MW` 
+        : "N/A";
+      const bTemp = props.bright_ti4 
+        ? `${Number(props.bright_ti4).toFixed(1)} K` 
+        : "N/A";
+      
+      let facDist = "None nearby";
+      if (props.distance_to_nearest_facility !== null && props.distance_to_nearest_facility !== undefined) {
+        const distM = Number(props.distance_to_nearest_facility);
+        facDist = distM >= 1000 ? `${(distM / 1000).toFixed(2)} km` : `${Math.round(distM)} m`;
+      }
+      const facType = props.nearest_facility_type || "N/A";
+      const lcClass = props.land_cover_class || "N/A";
+      const acqInfo = `${props.acq_date || ""} ${props.acq_time || ""}`.trim() || "N/A";
+
+      return `
+        <div class="popup-container">
+          <div class="popup-header">
+            <span>Hotspot #${props.id}</span>
+            <span class="popup-badge" style="background: ${cfg.color}">${cfg.label}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Confidence:</span>
+            <span class="popup-val">${confStr}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">FRP:</span>
+            <span class="popup-val">${frpVal}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Brightness (I-4):</span>
+            <span class="popup-val">${bTemp}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Acquired:</span>
+            <span class="popup-val">${acqInfo}</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Nearest Facility:</span>
+            <span class="popup-val">${facType} (${facDist})</span>
+          </div>
+          <div class="popup-row">
+            <span class="popup-label">Land Cover:</span>
+            <span class="popup-val">${lcClass}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Fetch and Render Hotspots ────────────────────────────────────────────
+    async function loadHotspots() {
+      const indicator = document.getElementById("loading-indicator");
+      indicator.style.display = "block";
+
+      const startDate = document.getElementById("start-date").value;
+      const endDate = document.getElementById("end-date").value;
+
+      const params = new URLSearchParams();
+      if (startDate) params.append("start_date", startDate);
+      if (endDate) params.append("end_date", endDate);
+      params.append("limit", "5000");
+
+      const url = `${apiBase}/hotspots?${params.toString()}`;
+
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const geojson = await resp.json();
+        allHotspotFeatures = geojson.features || [];
+        updateHotspotDisplay();
+      } catch (err) {
+        console.error("Failed to load hotspots:", err);
+      } finally {
+        indicator.style.display = "none";
+      }
+    }
+
+    // ── Filter and Render Markers ────────────────────────────────────────────
+    function updateHotspotDisplay() {
+      hotspotLayerGroup.clearLayers();
+      Object.keys(activeMarkersById).forEach(k => delete activeMarkersById[k]);
+
+      // Read active class checkboxes
+      const selectedClasses = new Set(
+        Array.from(document.querySelectorAll(".class-filter-cb:checked")).map(cb => cb.value)
+      );
+
+      // Class count tallies
+      const counts = {};
+      Object.keys(CLASS_CONFIG).forEach(k => (counts[k] = 0));
+
+      allHotspotFeatures.forEach(feat => {
+        const props = feat.properties || {};
+        const pClass = props.predicted_class || "other_false_positive";
+        
+        if (counts[pClass] !== undefined) {
+          counts[pClass]++;
+        }
+
+        if (!selectedClasses.has(pClass)) return;
+
+        const coords = feat.geometry.coordinates; // [lon, lat]
+        const lat = coords[1];
+        const lon = coords[0];
+        const cfg = CLASS_CONFIG[pClass] || { color: "#06b6d4", radius: 5 };
+
+        // Scale marker slightly by FRP if available
+        let r = cfg.radius;
+        if (props.frp && props.frp > 50) r += 2;
+        if (props.frp && props.frp > 150) r += 3;
+
+        const marker = L.circleMarker([lat, lon], {
+          radius: r,
+          fillColor: cfg.color,
+          color: "#ffffff",
+          weight: pClass === "industrial_event" ? 2 : 1,
+          opacity: 0.9,
+          fillOpacity: 0.75,
+        });
+
+        marker.bindPopup(createPopupContent(props));
+        marker.addTo(hotspotLayerGroup);
+
+        if (props.id) {
+          activeMarkersById[props.id] = marker;
+        }
+      });
+
+      // Update count badges in sidebar
+      Object.entries(counts).forEach(([k, c]) => {
+        const badge = document.getElementById(`count-${k}`);
+        if (badge) badge.textContent = c.toLocaleString();
+      });
+    }
+
+    // ── Fetch Industrial Events Feed ─────────────────────────────────────────
+    async function loadEvents() {
+      const container = document.getElementById("events-feed");
+      const countBadge = document.getElementById("events-count");
+
+      try {
+        const resp = await fetch(`${apiBase}/events?limit=50`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const events = await resp.json();
+
+        countBadge.textContent = events.length;
+
+        if (!events || events.length === 0) {
+          container.innerHTML = `<div class="no-events">No industrial events detected</div>`;
+          return;
+        }
+
+        container.innerHTML = "";
+        events.forEach(ev => {
+          const card = document.createElement("div");
+          card.className = "event-card";
+
+          const facName = ev.facility_name || ev.nearest_facility_type || "Facility";
+          const distM = ev.distance_to_nearest_facility !== null 
+            ? `${Math.round(ev.distance_to_nearest_facility)}m` 
+            : "";
+          const dateStr = ev.acq_date || "";
+          const frpStr = ev.frp ? `${Number(ev.frp).toFixed(1)} MW` : "";
+          const confStr = ev.prediction_confidence ? `${Math.round(ev.prediction_confidence * 100)}%` : "";
+
+          card.innerHTML = `
+            <div class="event-card-top">
+              <span>Hotspot #${ev.id} — ${facName}</span>
+              <span>${confStr}</span>
+            </div>
+            <div class="event-card-desc">
+              📅 ${dateStr} ${ev.acq_time || ""} &nbsp;•&nbsp; ⚡ ${frpStr} &nbsp;•&nbsp; 📍 ${distM}
+            </div>
+          `;
+
+          card.addEventListener("click", () => {
+            const lat = ev.latitude;
+            const lon = ev.longitude;
+            map.flyTo([lat, lon], 13, { duration: 1.2 });
+
+            const marker = activeMarkersById[ev.id];
+            if (marker) {
+              setTimeout(() => marker.openPopup(), 1200);
+            }
+          });
+
+          container.appendChild(card);
+        });
+      } catch (err) {
+        console.warn("Could not load events feed:", err);
+        container.innerHTML = `<div class="no-events">Unable to connect to events API</div>`;
+      }
+    }
+
+    // ── Fetch Facilities Overlay ─────────────────────────────────────────────
+    async function toggleFacilities(show) {
+      if (!show) {
+        facilityLayerGroup.clearLayers();
+        return;
+      }
+
+      try {
+        const resp = await fetch(`${apiBase}/facilities?limit=2000`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        facilityLayerGroup.clearLayers();
+        L.geoJSON(data, {
+          style: {
+            color: "#38bdf8",
+            weight: 1.5,
+            fillColor: "#0284c7",
+            fillOpacity: 0.2,
+          },
+          pointToLayer: (feat, latlng) => {
+            return L.circleMarker(latlng, {
+              radius: 4,
+              color: "#38bdf8",
+              fillColor: "#0284c7",
+              fillOpacity: 0.6,
+            });
+          },
+          onEachFeature: (feat, layer) => {
+            const p = feat.properties || {};
+            layer.bindPopup(`
+              <div class="popup-container">
+                <div class="popup-header">
+                  <span>${p.name || "Facility"}</span>
+                  <span class="popup-badge" style="background:#0284c7">${p.facility_type || "industrial"}</span>
+                </div>
+                <div class="popup-row">
+                  <span class="popup-label">OSM ID:</span>
+                  <span class="popup-val">${p.osm_id || "N/A"}</span>
+                </div>
+              </div>
+            `);
+          }
+        }).addTo(facilityLayerGroup);
+      } catch (err) {
+        console.warn("Failed to load facilities:", err);
+      }
+    }
+
+    // ── Event Handlers & Startup ─────────────────────────────────────────────
+    document.addEventListener("DOMContentLoaded", () => {
+      initMap();
+      renderClassCheckboxes();
+
+      // Auto-refresh when date changes
+      document.getElementById("start-date").addEventListener("change", loadHotspots);
+      document.getElementById("end-date").addEventListener("change", loadHotspots);
+
+      // Auto-refresh when checkboxes change
+      document.getElementById("class-checkboxes").addEventListener("change", updateHotspotDisplay);
+
+      document.getElementById("select-all-btn").addEventListener("click", () => {
+        document.querySelectorAll(".class-filter-cb").forEach(cb => (cb.checked = true));
+        updateHotspotDisplay();
+      });
+
+      document.getElementById("deselect-all-btn").addEventListener("click", () => {
+        document.querySelectorAll(".class-filter-cb").forEach(cb => (cb.checked = false));
+        updateHotspotDisplay();
+      });
+
+      document.getElementById("reset-dates-btn").addEventListener("click", () => {
+        document.getElementById("start-date").value = "";
+        document.getElementById("end-date").value = "";
+        loadHotspots();
+      });
+
+      document.getElementById("toggle-facilities").addEventListener("change", (e) => {
+        toggleFacilities(e.target.checked);
+      });
+
+      // Initial load
+      loadHotspots();
+      loadEvents();
+    });
+  </script>
+</body>
+</html>
